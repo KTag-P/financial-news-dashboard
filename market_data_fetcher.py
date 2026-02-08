@@ -11,6 +11,7 @@ def get_market_data():
         'NASDAQ': '^IXIC',
         'Nikkei 225': '^N225',
         'USD/KRW': 'KRW=X',
+        'JPY/KRW': 'JPYKRW=X',  # 엔/원 환율
         'US 10Y Bond': '^TNX',
         'Gold': 'GC=F',
         'Silver': 'SI=F',
@@ -52,6 +53,8 @@ def get_market_data():
             # Formatting
             if name == 'USD/KRW':
                 price_str = f"{current:.2f}원"
+            elif name == 'JPY/KRW':
+                price_str = f"{current:.2f}원"  # 100엔당 원화
             elif 'Bond' in name:
                 price_str = f"{current:.2f}%"
             elif name in ['Gold', 'Silver', 'Copper']:

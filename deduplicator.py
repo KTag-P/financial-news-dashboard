@@ -13,34 +13,56 @@ def is_personnel_news(title):
 
 def deduplicate_news(news_list):
     """
-    Removes duplicate news items based on title similarity.
-    Groups 'Personnel' news aggressively.
+    Advanced Deduplication:
+    1. Sorts by content length (descending) to prioritize detailed articles.
+    2. Uses SequenceMatcher for title similarity.
+    3. Checks for high overlap in title words.
     """
+    if not news_list:
+        return []
+
+    # 1. Sort by Content Length (Longest first) -> We keep the most detailed version
+    # Use a safe get for length, ensuring item is a dict
+    def get_len(x):
+        if isinstance(x, dict):
+            return len(x.get('full_content', '')) if x.get('full_content') else 0
+        return 0
+
+    sorted_news = sorted(news_list, key=get_len, reverse=True)
+    
     unique_news = []
-    seen_titles = []
     
-    has_personnel_news = False
-    
-    for news in news_list:
-        title = news['title']
-        
-        # Special handling for Personnel news
-        if is_personnel_news(title):
-            if has_personnel_news:
-                continue # Skip subsequent personnel news
-            has_personnel_news = True
-            unique_news.append(news)
-            continue
-            
+    for news in sorted_news:
+        if not isinstance(news, dict): continue
+        title = news.get('title', '')
         is_duplicate = False
-        for seen_title in seen_titles:
-            # Check similarity
-            if is_similar(title, seen_title):
+        
+        for kept_item in unique_news:
+            kept_title = kept_item['title']
+            
+            # A. Sequence Matcher (Fuzzy String Match)
+            # Threshold 0.6 is good for "Same event, slightly different headline"
+            similarity = SequenceMatcher(None, title, kept_title).ratio()
+            
+            # B. Specific check for "Appointment/Personnel" to be very aggressive
+            # If both are personnel news, and similarity > 0.5, treat as dupe
+            is_personnel_a = is_personnel_news(title)
+            is_personnel_b = is_personnel_news(kept_title)
+            
+            if is_personnel_a and is_personnel_b:
+                if similarity > 0.4: # Very aggressive for personnel news
+                     is_duplicate = True
+                     break
+            
+            if similarity > 0.6:
                 is_duplicate = True
                 break
-        
+                
         if not is_duplicate:
             unique_news.append(news)
-            seen_titles.append(title)
             
+    # Restore Chronological Order (Newest First) for display
+    # Assuming 'published' is sortable or we can just rely on the original fetch order if we tracked indices.
+    # But usually news_fetcher returns newest first. Let's try to parse date.
+    # For now, just return valid items, app.py sorts them anyway.
     return unique_news

@@ -88,6 +88,32 @@ st.markdown("""
         background-color: #f9f9f9;
         margin-bottom: 8px !important;
     }
+    
+    /* Scroll to Top Button */
+    .scroll-top-btn {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        transition: transform 0.2s, box-shadow 0.2s;
+        text-decoration: none;
+    }
+    .scroll-top-btn:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -145,8 +171,12 @@ def display_archive(company_key, title, filter_mode="all"):
              if not full_text:
                  full_text = news.get('summary', '내용 없음')
 
-             # Pass to summarizer
-             summary_text = simple_summarizer.summarize_korean(full_text, num_sentences=4)
+             # Map company_key to Korean name for focus
+             focus_map = {"IBK": "IBK캐피탈", "KDB": "산은캐피탈", "Capital Industry": None, "Macro Economy": None}
+             focus_kw = focus_map.get(company_key)
+             
+             # Pass to summarizer with focus keyword
+             summary_text = simple_summarizer.summarize_korean(full_text, num_sentences=4, focus_keyword=focus_kw)
              
              st.info(f"💡 **AI 요약**: {summary_text}")
              
@@ -167,7 +197,7 @@ with st.container():
     if market_data:
         metrics = [
             ("KOSPI", "KOSPI"), ("KOSDAQ", "KOSDAQ"), ("USD/KRW", "USD/KRW"), 
-            ("미국채 10년", "US 10Y Bond"), 
+            ("JPY/KRW", "JPY/KRW"), ("미국채 10년", "US 10Y Bond"), 
             ("나스닥", "NASDAQ"), ("니케이", "Nikkei 225"),
             ("금", "Gold"), ("은", "Silver"), ("구리", "Copper")
         ]
@@ -182,14 +212,24 @@ with st.container():
             for i, (label, key) in enumerate(row):
                  if key in market_data:
                     item = market_data[key]
-                    cols[i].metric(label, item['price'], item['change'])
+                    # Color the main price value: red for +, blue for -
+                    price_color = "#e53935" if item['color'] == "red" else "#1976d2" if item['color'] == "blue" else "#333333"
+                    change_color = "#e53935" if item['color'] == "red" else "#1976d2" if item['color'] == "blue" else "#666666"
+                    
+                    cols[i].markdown(f"""
+                        <div style="text-align: center; padding: 8px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;">
+                            <div style="font-size: 14px; color: #666; margin-bottom: 4px;">{label}</div>
+                            <div style="font-size: 20px; font-weight: bold; color: {price_color};">{item['price']}</div>
+                            <div style="font-size: 13px; color: {change_color};">{item['change']}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
     else:
         st.warning("시장 데이터를 불러오는 중 오류가 발생했습니다.")
         
     st.markdown("---")
     
     # Chart Selection UI
-    st.write("📉 **1년간 시세 변화 추이 (클릭하여 선택)**")
+    st.write("📉 **5년간 시세 변화 추이 (클릭하여 선택)**")
     chart_options = [m[0] for m in metrics]
     selection = st.radio("지표 선택", chart_options, horizontal=True, label_visibility="collapsed")
     
@@ -274,7 +314,85 @@ if 'news_data' not in st.session_state:
         st.session_state['news_data'] = {}
 
 # Sidebar: Data Info
+# Sidebar: Data Info
 st.sidebar.markdown("### 🗄️ 데이터 상태")
+# Safe get for last updated
+last_up = st.session_state.get('news_data', {}).get('_last_updated', '')
+if not last_up:
+     # Try to find a valid date from any item
+     pass 
+
+if last_up:
+    st.sidebar.info(f"📅 데이터 기준:\n{last_up}")
+else:
+    st.sidebar.warning("데이터가 없습니다.\n(자동 업데이트 대기 중)")
+
+st.sidebar.markdown("---")
+# Duplicate NotebookLM Link Removed (Lines 224-225 were removed in previous steps or I should check)
+
+# 3. Sidebar Configuration
+# ...
+
+
+def auto_update_news():
+    st.toast("⏳ 최신 뉴스를 업데이트 중입니다... (사업보고서 포함)")
+    days_lookback = 3 # Increased lookback to catch recent reports
+    new_data = {}
+    
+    # 1. Fetch Regular News
+    # IBK Capital
+    st.toast("IBK캐피탈 뉴스 수집 중...")
+    raw_ibk = news_fetcher.fetch_news("IBK Capital", days=days_lookback, max_items=20)
+    
+    # IBK Parent
+    raw_ibk_p = news_fetcher.fetch_news("IBK Parent", days=days_lookback, max_items=20)
+
+    # KDB Capital
+    st.toast("산은캐피탈 뉴스 수집 중...")
+    raw_kdb = news_fetcher.fetch_news("KDB Capital", days=days_lookback, max_items=20)
+    
+    # KDB Parent
+    raw_kdb_p = news_fetcher.fetch_news("KDB Parent", days=days_lookback, max_items=20)
+    
+    # Industry
+    new_data['Capital Industry'] = news_fetcher.fetch_news("Capital Industry", days=days_lookback, max_items=10)
+    new_data['Macro Economy'] = news_fetcher.fetch_news("Macro Economy", days=days_lookback, max_items=10)
+    
+    # 2. Fetch Business Reports (Integrated)
+    st.toast("사업보고서 및 공시 자료 수집 중...")
+    rep_ibk = news_fetcher.fetch_business_reports("IBK기업은행")
+    rep_ibk_c = news_fetcher.fetch_business_reports("IBK캐피탈")
+    rep_kdb = news_fetcher.fetch_business_reports("KDB산업은행")
+    rep_kdb_c = news_fetcher.fetch_business_reports("산은캐피탈")
+
+    # 3. Merge & Deduplicate
+    # IBK Capital
+    new_data['IBK'] = deduplicator.deduplicate_news(raw_ibk + rep_ibk_c)
+    # IBK Parent
+    new_data['IBK_Parent'] = deduplicator.deduplicate_news(raw_ibk_p + rep_ibk)
+    # KDB Capital
+    new_data['KDB'] = deduplicator.deduplicate_news(raw_kdb + rep_kdb_c)
+    # KDB Parent
+    new_data['KDB_Parent'] = deduplicator.deduplicate_news(raw_kdb_p + rep_kdb)
+
+    # 4. Save
+    for key, items in new_data.items():
+        if key in st.session_state['news_data']:
+             # Merge with existing archive and deduplicate again
+             combined = items + st.session_state['news_data'][key]
+             st.session_state['news_data'][key] = deduplicator.deduplicate_news(combined)
+        else:
+             st.session_state['news_data'][key] = items
+             
+    st.session_state['news_data']['_last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    news_storage.save_news_history(st.session_state['news_data'])
+    st.toast("✅ 통합 뉴스 업데이트 완료!")
+             
+    st.session_state['news_data']['_last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    news_storage.save_news_history(st.session_state['news_data'])
+    st.toast("✅ 최신 뉴스 업데이트 완료!")
+
+# Sidebar: Data Info
 if '_last_updated' in st.session_state.get('news_data', {}):
     st.sidebar.info(f"📅 데이터 기준:\n{st.session_state['news_data']['_last_updated']}")
 else:
@@ -355,6 +473,8 @@ def display_company_info(company_name, key):
                  title = f"🔴 {title}"
             with st.expander(f"{title} ({rec['period']})"):
                 st.write(f"**분야**: {', '.join(rec['roles'])}")
+                if rec.get('scale'):
+                     st.write(f"**규모**: {rec['scale']}")
                 if rec.get('note'):
                     st.write(f"**Note**: {rec['note']}")
                 if rec.get('link'):
@@ -362,7 +482,7 @@ def display_company_info(company_name, key):
         st.markdown(f"👉 [채용 홈페이지 바로가기]({recruitment_link})")
 
 # Main Layout
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["기업 개요", "IBK캐피탈 뉴스", "산은캐피탈 뉴스", "캐피탈 업황", "거시경제", "모회사/그룹 뉴스"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["기업 개요", "IBK캐피탈 뉴스", "산은캐피탈 뉴스", "캐피탈 업황", "거시경제", "IBK기업은행", "KDB산업은행"])
 
 with tab1:
      col_info1, col_info2 = st.columns(2)
@@ -381,7 +501,8 @@ def display_archive(company_key, title, filter_mode="all"):
     # specific logic for Group News Tab
     if company_key == "GROUP":
         # Aggregate IBK and KDB news, then filter for NON-Capital
-        all_news = st.session_state['news_data'].get('IBK', []) + st.session_state['news_data'].get('KDB', [])
+        # Now using Explicit Parent Keys
+        all_news = st.session_state['news_data'].get('IBK_Parent', []) + st.session_state['news_data'].get('KDB_Parent', [])
     else:
         all_news = st.session_state['news_data'].get(company_key, [])
     
@@ -411,33 +532,73 @@ def display_archive(company_key, title, filter_mode="all"):
             content_check = (item['title'] + item.get('summary', '')).replace(" ", "")
             
             if filter_mode == "capital_only":
-                target_keyword = "캐피탈"
-                if company_key == "KDB": target_keyword = "산은캐피탈"
-                if company_key == "IBK": target_keyword = "IBK캐피탈"
-                if target_keyword not in content_check and "캐피탈" not in content_check:
+                if "캐피탈" not in content_check and "Capital" not in item.get('title', ''):
                     continue
             elif filter_mode == "group_only":
-                # Exclude if it mentions Capital explicitly (since those are in Capital tabs)
+                # Ensure no Capital news in Group tab (Redundant now with _Parent keys, but safe)
                 if "IBK캐피탈" in content_check or "산은캐피탈" in content_check:
+                    continue
+            elif filter_mode == "parent_only":
+                # Exclude 캐피탈 news from parent company tabs
+                if "캐피탈" in content_check or "Capital" in item.get('title', ''):
                     continue
                     
             filtered_news.append(item)
         except:
-            continue
+             continue
+
             
     # Sort by Date (Newest First)
     filtered_news.sort(key=lambda x: parser.parse(x.get('published', '2000-01-01')), reverse=True)
             
     st.info(f"📚 선택된 기간의 아카이브: {len(filtered_news)}건")
     
+    # Separate Business Reports from General News
+    business_reports = []
+    general_news = []
+    
+    report_keywords = ["[공시", "[보고서", "사업보고서", "경영공시", "감사보고서", "실적발표"]
+    
+    for item in filtered_news:
+        title_item = item.get('title', '')
+        if any(k in title_item for k in report_keywords):
+            business_reports.append(item)
+        else:
+            general_news.append(item)
+            
+    # Display Business Reports Section (if any)
+    if business_reports:
+        st.markdown(f"### 📑 {title.split(' ')[0]} 주요 사업보고서 및 공시")
+        for i, news in enumerate(business_reports):
+            # Report Style Display (Simpler, more formal)
+            with st.expander(f"📄 {news['title']}", expanded=True):
+                 st.caption(f"📅 공시일: {news.get('published', '')[:10]}")
+                 if news.get('link'):
+                    st.markdown(f"👉 [원문 확인]({news['link']})")
+                 st.write(news.get('summary', ''))
+        st.markdown("---")
+        st.markdown("### 📰 뉴스 아카이브")
+        # Update filtered_news to only show general news below
+        filtered_news = general_news
+
     if st.button(f"📊 {selected_year}년 {selected_month}월 AI 핵심 리포트 생성", key=f"analyze_{company_key}"):
-         if filtered_news:
+         if filtered_news or business_reports:
              with st.spinner("AI가 해당 기간의 뉴스를 종합하여 심층 분석 보고서를 작성 중입니다... (약 10초 소요)"):
                  # Use Enhanced Report Generator
-                 report = report_generator.generate_synthesis_report(filtered_news, title=f"{title} - {selected_year}년 {selected_month}월 종합 분석")
+                 target_comp = "IBK캐피탈" if company_key == "IBK" else "산은캐피탈" if company_key == "KDB" else "캐피탈 업계"
+                 report = report_generator.generate_synthesis_report(filtered_news + business_reports, title=f"{title} - {selected_year}년 {selected_month}월 종합 분석", company_name=target_comp)
                  
                  with st.expander("📄 생성된 AI 리포트 보기", expanded=True):
                     st.markdown(report)
+                 
+                 # Feature for NotebookLM manual usage
+                 with st.expander("📋 NotebookLM 업로드용 소스 텍스트 복사 (Copy Source)"):
+                     st.info("아래 텍스트를 복사하여 Google NotebookLM에 '소스 추가' 하시면 더 정교한 질의응답이 가능합니다.")
+                     source_text = ""
+                     for item in business_reports + filtered_news:
+                         source_text += f"[{item.get('published','')[:10]}] {item.get('title')}\n{item.get('full_content')}\n\n"
+                     st.text_area("Whole Text Source", source_text, height=200)
+
          else:
              st.warning("분석할 뉴스가 없습니다.")
 
@@ -463,8 +624,12 @@ def display_archive(company_key, title, filter_mode="all"):
              if not full_text:
                  full_text = news.get('summary', '내용 없음')
 
-             # Pass to summarizer
-             summary_text = simple_summarizer.summarize_korean(full_text, num_sentences=4)
+             # Map company_key to Korean name for focus
+             focus_map = {"IBK": "IBK캐피탈", "KDB": "산은캐피탈", "Capital Industry": None, "Macro Economy": None}
+             focus_kw = focus_map.get(company_key)
+             
+             # Pass to summarizer with focus keyword
+             summary_text = simple_summarizer.summarize_korean(full_text, num_sentences=4, focus_keyword=focus_kw)
              
              st.info(f"💡 **AI 요약**: {summary_text}")
              
@@ -482,4 +647,50 @@ with tab4:
 with tab5:
     display_archive('Macro Economy', '거시경제 아카이브')
 with tab6:
-    display_archive('GROUP', '모회사/그룹(IBK/KDB) 뉴스 아카이브', filter_mode="group_only")
+    display_archive('IBK Parent', 'IBK기업은행 뉴스 아카이브', filter_mode="parent_only")
+with tab7:
+    display_archive('KDB Parent', 'KDB산업은행 뉴스 아카이브', filter_mode="parent_only")
+
+# Scroll to Top Button (Fixed Position with JS)
+st.markdown("""
+    <style>
+        .scroll-top-btn {
+            position: fixed !important;
+            bottom: 30px;
+            right: 30px;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.5);
+            transition: transform 0.2s, box-shadow 0.2s;
+            text-decoration: none !important;
+        }
+        .scroll-top-btn:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.7);
+        }
+    </style>
+    <div class="scroll-top-btn" onclick="window.parent.document.querySelector('section.main').scrollTo({top: 0, behavior: 'smooth'});">
+        ↑
+    </div>
+    <script>
+        // Alternative scroll method for Streamlit iframe
+        document.querySelector('.scroll-top-btn').addEventListener('click', function() {
+            var main = window.parent.document.querySelector('section.main');
+            if (main) {
+                main.scrollTo({top: 0, behavior: 'smooth'});
+            } else {
+                window.scrollTo({top: 0, behavior: 'smooth'});
+            }
+        });
+    </script>
+""", unsafe_allow_html=True)

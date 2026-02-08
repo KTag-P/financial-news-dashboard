@@ -6,6 +6,9 @@ def clean_text(text):
     """
     Removes reporter bylines, emails, and brackets commonly found in news.
     """
+    if not text:
+        return ""
+        
     # Remove [Name Reporter] or (Name) at start
     text = re.sub(r'^\[.*?\]', '', text) 
     text = re.sub(r'^\(.*?(=|기자).*?\)', '', text)
@@ -16,78 +19,113 @@ def clean_text(text):
     
     # Remove common press suffixes
     text = re.sub(r'무단전재 및 재배포 금지', '', text)
-    text = re.sub(r'Copyrights', '', text)
+    text = re.sub(r'Copyrights?.*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'저작권자.*', '', text)
+    
+    # Remove HTML entities
+    text = re.sub(r'&[a-zA-Z]+;', ' ', text)
+    
+    # Remove image/graphic markers
+    text = re.sub(r'이미지 크게보기.*?기자\)', '', text)
+    text = re.sub(r'\[.*?기자\]', '', text)
+    text = re.sub(r'그래픽=.*?기자', '', text)
     
     return text.strip()
 
-def summarize_korean(text, num_sentences=3):
+def summarize_korean(text, num_sentences=4, max_length=800, focus_keyword=None):
     """
-    Simple extractive summarizer for Korean text.
-    ranks sentences by keyword frequency.
+    Concise extractive summarizer for Korean financial news.
+    Returns multiple key sentences, prioritizing content over brevity.
     """
-    if not text:
-        return "내용 없음"
+    # Handle empty/placeholder content
+    if not text or len(text.strip()) < 10:
+        return "기사 요약 준비 중..."
     
-    # 0. Clean Text
+    # Clean Text
     text = clean_text(text)
-
-    # 1. Split sentences (simple heuristic)
-    sentences = re.split(r'(?<=[.?!])\s+', text)
+    
+    # Handle very short text - just return it
+    if len(text) < 100:
+        return text
+    
+    # Split sentences - improved regex for Korean
+    sentences = re.split(r'(?<=[.?!다요])\s+', text)
     
     # Filter out short/metadata sentences
     valid_sentences = []
     
     for s in sentences:
         s = s.strip()
-        # Aggressive skipping
-        if len(s) < 30: continue # Too short
-        if "기자" in s and ("=" in s or "]" in s): continue # "Hong Gil-dong Reporter ="
-        if "@" in s: continue # Email
-        if "Copyright" in s or "무단전재" in s: continue
-        if s.startswith("["): continue # [News Agency]
+        if len(s) < 15: continue
+        if "기자" in s and ("=" in s or "]" in s): continue
+        if "@" in s: continue
+        if "Copyright" in s or "무단전재" in s or "저작권" in s: continue
+        if s.startswith("["): continue
+        if "▲" in s or "▼" in s: continue
+        if re.match(r'^[0-9\s\-\.\,]+$', s): continue
+        if "이미지 크게보기" in s: continue
+        if "그래픽=" in s: continue
         
         valid_sentences.append(s)
              
     if not valid_sentences:
-        valid_sentences = sentences[:5] # Fallback to first few if overkill
+        # Fallback: just return the cleaned text
+        return text[:max_length] if len(text) > max_length else text
 
-    if len(valid_sentences) <= num_sentences:
-        return " ".join(valid_sentences)
+    # Financial & Focus Keyword Boosting
+    business_keywords = ["순이익", "실적", "투자", "매출", "성장", "자산", "증가", "감소",
+                         "금리", "환율", "전망", "인수", "합병", "MOU", "사업", "펀드",
+                         "수익", "영업이익", "당기순이익", "대출", "채권", "주가", "출자",
+                         "PEF", "사모펀드", "캐피탈", "금융"]
 
-    # 2. Tokenize (simple whitespace + cleanup)
-    words = []
-    for s in valid_sentences:
-        # Remove special chars for counting
-        clean_s = re.sub(r'[^\w\s]', '', s)
-        words.extend(clean_s.split())
-
-    # 3. Calculate Word Frequencies
-    word_freq = Counter(words)
-    max_freq = max(word_freq.values()) if word_freq else 1
-    
-    # normalize
-    for w in word_freq:
-        word_freq[w] /= max_freq
-
-    # 4. Score Sentences
+    # Score Sentences
     scores = []
     for i, s in enumerate(valid_sentences):
         score = 0
-        s_words = re.sub(r'[^\w\s]', '', s).split()
-        for w in s_words:
-             score += word_freq.get(w, 0)
         
-        # Penalty for very short sentences
-        if len(s_words) < 5:
-            score *= 0.5
+        # Focus keyword boost (+15 per mention)
+        if focus_keyword:
+            focus_variants = [focus_keyword]
+            if "캐피탈" in focus_keyword:
+                if "산은" in focus_keyword:
+                    focus_variants.extend(["KDB캐피탈", "산업은행캐피탈", "KDB Capital"])
+                elif "IBK" in focus_keyword:
+                    focus_variants.extend(["기업은행캐피탈", "IBK Capital"])
+                    
+            for variant in focus_variants:
+                if variant in s:
+                    score += 15
+        
+        # Business keyword boost (+2 per keyword)
+        for kw in business_keywords:
+            if kw in s:
+                score += 2
+        
+        # Length boost (prefer medium-length sentences)
+        if 20 <= len(s) <= 150:
+            score += 3
+        elif len(s) > 150:
+            score += 1
+            
+        # Position boost (first sentences often summarize)
+        if i == 0:
+            score += 4
+        elif i < 3:
+            score += 2
+        elif i < 5:
+            score += 1
             
         scores.append((score, i, s))
 
-    # 5. Select Top Sentences (Preserve Order)
-    # Sort by score desc
-    ranked_sentences = sorted(scores, key=lambda x: x[0], reverse=True)[:num_sentences]
-    # Sort by original index
-    ranked_sentences.sort(key=lambda x: x[1])
+    # Select Top Sentences - ALWAYS get at least num_sentences
+    # Sort by score, take top
+    ranked = sorted(scores, key=lambda x: x[0], reverse=True)[:num_sentences]
+    ranked.sort(key=lambda x: x[1])  # Restore reading order
 
-    final_summary = " ".join([item[2] for item in ranked_sentences])
-    return final_summary
+    final_summary = " ".join([item[2] for item in ranked])
+    
+    # Enforce max length
+    if len(final_summary) > max_length:
+        final_summary = final_summary[:max_length]
+        
+    return final_summary if final_summary else text[:max_length]
