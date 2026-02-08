@@ -40,14 +40,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Mobile Access Info
-local_ip = get_local_ip()
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📱 모바일 접속")
-st.sidebar.markdown(f"같은 와이파이 연결 후 아래 주소 입력:")
-st.sidebar.code(f"http://{local_ip}:8501")
-
-st.title("💰 금융 뉴스 대시보드: IBK & 산은캐피탈")
+st.title("🏦 캐피탈사 채용 대비 (화면: Bright Mode)")
 
 # Session State Init
 if 'news_data' not in st.session_state:
@@ -90,16 +83,27 @@ def display_company_info(company_name, key):
     with col2:
         st.subheader("💼 주요 사업 (Business Areas)")
         for biz in data['business']:
-            st.write(f"- {biz}")
+            with st.expander(biz['name']):
+                st.write(f"**규모**: {biz['scale']}")
+                st.write(f"**상세**: {biz['desc']}")
             
     st.markdown("---")
     st.subheader("🧑‍🤝‍🧑 채용 정보 (Recruitment)")
-    recruit = data.get('recruitment')
-    if recruit:
-        st.info(f"📅 **채용 기간**: {recruit['period']}")
-        st.write(f"**모집 직무**: {', '.join(recruit['roles'])}")
-        st.write(f"**인재상/핵심가치**: {', '.join(recruit['values'])}")
-        st.markdown(f"👉 [채용 홈페이지 바로가기]({recruit['link']})")
+    recruitment_list = data.get('recruitment')
+    recruitment_values = data.get('recruitment_values')
+    recruitment_link = data.get('recruitment_link')
+
+    if recruitment_list:
+        st.info(f"💡 **인재상 & 핵심가치**: {', '.join(recruitment_values)}")
+        
+        st.markdown("##### 📅 최근 채용 이력 (2024-2025)")
+        for rec in recruitment_list:
+            with st.expander(f"{rec['title']} ({rec['period']})"):
+                st.write(f"**모집 분야**: {', '.join(rec['roles'])}")
+                if rec.get('note'):
+                    st.write(f"**특이사항**: {rec['note']}")
+        
+        st.markdown(f"👉 [채용 홈페이지 바로가기]({recruitment_link})")
     else:
         st.write("채용 정보가 없습니다.")
 
@@ -134,7 +138,8 @@ def display_news_tab(company_name, news_items, key_prefix):
             
             if st.button(f"📄 {company_name} 요약 보고서 생성", key=f"{key_prefix}_btn"):
                 report = report_generator.generate_markdown_report(news_items, title=f"{company_name} 일일 요약 보고서")
-                st.code(report, language='markdown')
+                with st.expander("📄 보고서 보기 (클릭하여 펼치기)", expanded=True):
+                    st.markdown(report) # Use markdown for better formatting and font size
 
     st.markdown("---")
 

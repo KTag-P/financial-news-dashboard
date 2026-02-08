@@ -32,9 +32,16 @@ def generate_markdown_report(news_items, title="일일 뉴스 보고서 (Daily R
             report += f"![News Image]({news['image']})\n"
             
         if news.get('summary'):
-            report += f"\n> **내용 요약**:\n> {news['summary']}\n"
+            # 5-7 lines summary truncation logic
+            full_summary = news['summary']
+            # Split by sentences or lines, take first 3-4 sentences to approximate 5-7 lines on mobile
+            sentences = full_summary.split('. ')
+            truncated_summary = '. '.join(sentences[:4]) + '.' if len(sentences) > 4 else full_summary
+            
+            # Use blockquote for visibility
+            report += f"\n> **내용 요약**:\n> {truncated_summary}\n"
         else:
-             report += f"\n> *내용을 가져오지 못했습니다.*\n"
+             report += f"\n> *내용을 가져오지 못했습니다. (원문 링크를 확인하세요)*\n"
              
         report += "\n---\n"
         
