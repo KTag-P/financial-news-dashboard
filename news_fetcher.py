@@ -2,6 +2,8 @@ import feedparser
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 import time
+from time import mktime
+from urllib.parse import quote
 import requests
 import re
 
@@ -86,24 +88,35 @@ def scrape_content(url, title=''):
         return None, None, "newspaper3k not installed", url
         
     text = None
+    image = None # Initialize image
     error = None
     
     # 1. Try Original URL
     try:
-        article = Article(url)
+        # Attempt to download and parse article
+        article = Article(url, language='ko') # Added language='ko'
         article.download()
         article.parse()
-        text = article.text
-        image = article.top_image  # Extract image
         
-        # Check if content is blocked/short (e.g. Hankyung often blocks or redirects)
-        if not text or len(text) < 200:
-             raise Exception("Content too short or empty")
-             
+        # Check if content is substantial
+        if len(article.text) > 50: # Changed threshold from 200 to 50
+            text = article.text
+            image = article.top_image
+        else:
+            # Fallback message if content is too short
+            text = "내용을 불러올 수 없습니다. 원문 링크를 확인해주세요."
+            image = None
+            # Do not raise an exception here, allow Naver fallback if title is present
+            # or return this message if no Naver fallback.
+            
         return text, image, None, url
         
     except Exception as e:
         error = str(e)
+        # print(f"Error scraping {url}: {e}") # Uncomment for debugging
+        text = "스크래핑 중 오류가 발생했습니다." # Set text to error message
+        image = None # Ensure image is None on error
+        
         # 2. Naver Fallback
         if title:
             print(f"Falling back to Naver for: {title}")
@@ -118,18 +131,62 @@ def fetch_news(query, days=1, max_items=10):
     Fetches news for a given query from Google News RSS.
     Includes full content scraping.
     """
-    rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
+    today = datetime.now()
+    # Strict 24h lookback if days=1, otherwise days-based
+    if days <= 1:
+        cutoff_date = today - timedelta(hours=24)
+    else:
+        cutoff_date = today - timedelta(days=days)
+        cutoff_date = cutoff_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Expanded Keywords for Industry & Macro
+    keywords = {
+        'IBK Capital': ['IBK캐피탈', 'IBK기업은행 캐피탈'],
+        'KDB Capital': ['산은캐피탈', 'KDB산업은행 캐피탈'],
+        'Capital Industry': ['캐피탈사 업황', '여신전문금융', '캐피탈 채권', 'PF 대출 부실'],
+        'Macro Economy': ['한국 기준금리', '원달러 환율 전망', '국고채 금리', '회사채 금리']
+    }
+    
+    # The original 'query' parameter is now treated as 'company_name' for keyword lookup
+    # If 'query' is not in keywords, it will be used directly in the search.
+    search_terms = keywords.get(query, [query])
+    
+    # Construct Query
+    # For Google News RSS, 'when:1d' works well for recent.
+    # We combine it with python-side filtering for precision.
+    term_query = ' OR '.join([f'"{t}"' for t in search_terms])
+    if days <= 1:
+         encoded_query = quote(f"({term_query}) when:1d")
+    else:
+         encoded_query = quote(f"({term_query}) when:{days}d")
+    
+    # Using Google News RSS for broader coverage
+    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+    
     feed = feedparser.parse(rss_url)
     
     news_items = []
-    
+    seen_titles = set() # Added to prevent duplicate articles
+
     # Process only the top N items to avoid timeouts
     entries = feed.entries[:max_items]
     
-    # Create a placeholder for progress if running in streamlit? 
-    # No, keep logic pure. Caller handles progress.
-    
     for entry in entries:
+        # Strict Date Filter
+        if hasattr(entry, 'published_parsed') and entry.published_parsed:
+            try:
+                pub_struct = entry.published_parsed
+                pub_dt = datetime.fromtimestamp(mktime(pub_struct))
+                
+                if pub_dt < cutoff_date:
+                    continue
+            except Exception:
+                pass # If parsing fails, maybe include? or safe skip. Safe skip.
+        else:
+            # If no date, and we want strict 24h, safer to skip unless it's very relevant?
+            # Google News usually has dates.
+            pass
+
         title = entry.title
         link = entry.link
         published = entry.published

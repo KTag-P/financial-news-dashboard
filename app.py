@@ -3,6 +3,7 @@ import news_fetcher
 import deduplicator
 import report_generator
 import company_data
+import market_data_fetcher
 import socket
 
 st.set_page_config(page_title="금융 뉴스 대시보드", layout="wide")
@@ -42,6 +43,27 @@ st.markdown("""
 
 st.title("🏦 캐피탈사 채용 대비 (화면: Bright Mode)")
 
+# Market Data Widget
+with st.container():
+    st.markdown("### 🌏 실시간 시장 지표 (Market Indicators)")
+    market_data = market_data_fetcher.get_market_data()
+    
+    if market_data:
+        cols = st.columns(6)
+        metrics = [
+            ("KOSPI", "KOSPI"), ("USD/KRW", "USD/KRW"), 
+            ("국고채 10년", "US 10Y Bond"), # US 10Y as proxy or label simply 'Gold' etc
+            ("금 (Gold)", "Gold"), ("은 (Silver)", "Silver"), ("구리 (Copper)", "Copper")
+        ]
+        
+        for i, (label, key) in enumerate(metrics):
+            if key in market_data:
+                item = market_data[key]
+                cols[i].metric(label, item['price'], item['change'])
+    else:
+        st.warning("시장 데이터를 불러오는 중 오류가 발생했습니다.")
+    st.markdown("---")
+
 # Session State Init
 if 'news_data' not in st.session_state:
     st.session_state['news_data'] = {}
@@ -49,18 +71,26 @@ if 'news_data' not in st.session_state:
 if st.sidebar.button("뉴스 가져오기 (Fetch News)"):
     with st.spinner("뉴스를 가져오는 중입니다... (내용 분석에 시간이 소요될 수 있습니다)"):
         # Fetch IBK
-        raw_ibk = news_fetcher.fetch_news("IBK캐피탈", days=days_lookback)
-        unique_ibk = deduplicator.deduplicate_news(raw_ibk)
-        st.session_state['news_data']['IBK'] = unique_ibk
+        raw_ibk = news_fetcher.fetch_news("IBK Capital", days=days_lookback)
+        st.session_state['news_data']['IBK'] = deduplicator.deduplicate_news(raw_ibk)
         
         # Fetch KDB
-        raw_kdb = news_fetcher.fetch_news("산은캐피탈", days=days_lookback)
-        unique_kdb = deduplicator.deduplicate_news(raw_kdb)
-        st.session_state['news_data']['KDB'] = unique_kdb
+        raw_kdb = news_fetcher.fetch_news("KDB Capital", days=days_lookback)
+        st.session_state['news_data']['KDB'] = deduplicator.deduplicate_news(raw_kdb)
         
-        st.success(f"완료! IBK: {len(unique_ibk)}건, 산은: {len(unique_kdb)}건")
+        # Fetch Industry
+        raw_ind = news_fetcher.fetch_news("Capital Industry", days=days_lookback)
+        st.session_state['news_data']['Capital Industry'] = deduplicator.deduplicate_news(raw_ind)
+        
+        # Fetch Macro
+        raw_mac = news_fetcher.fetch_news("Macro Economy", days=days_lookback)
+        st.session_state['news_data']['Macro Economy'] = deduplicator.deduplicate_news(raw_mac)
+        
+        st.success(f"완료! IBK: {len(st.session_state['news_data']['IBK'])}건, 산은: {len(st.session_state['news_data']['KDB'])}건, 업황: {len(st.session_state['news_data']['Capital Industry'])}건, 경제: {len(st.session_state['news_data']['Macro Economy'])}건")
 
 def display_company_info(company_name, key):
+    # (Function body assumes unchanged, but need to ensure it's not duplicated/broken by previous edits)
+    # Re-declaring here to be safe if previous replace messed up 
     data = company_data.company_info.get(company_name)
     if not data:
         st.error(f"{company_name} 정보를 찾을 수 없습니다.")
@@ -117,14 +147,6 @@ def display_company_info(company_name, key):
 def display_news_tab(company_name, news_items, key_prefix):
     st.header(f"📰 {company_name} 뉴스 ({len(news_items)}건)")
     
-    # Sort by published date (Descending) - Simple string sort works for ISO format usually, 
-    # but let's try to be robust if format varies. 
-    # Assuming 'published' is a string, we might typically rely on index if fetcher returns sorted.
-    # But user asked for "Newest first".
-    # Let's verify data format or just reverse if source is RSS (usually newsest first).
-    # We will assume fetcher returns decent order, but let's ensure image presence doesn't break things.
-    
-    # Highlight Keywords
     major_keywords = ['실적', '최대', '순이익', '배당', 'CEO', '대표', '인수', '합병', 'M&A', '발행']
     
     # 1. Daily Summary
@@ -133,13 +155,13 @@ def display_news_tab(company_name, news_items, key_prefix):
             st.info(f"📢 **오늘의 주요 헤드라인 (Top 5)**")
             for i, item in enumerate(news_items[:5]):
                 title = item['title']
-                published = item.get('published', '')[:10] # Show date
+                published = item.get('published', '')[:10] 
                 st.write(f"{i+1}. {title} ({published})")
             
             if st.button(f"📄 {company_name} 요약 보고서 생성", key=f"{key_prefix}_btn"):
                 report = report_generator.generate_markdown_report(news_items, title=f"{company_name} 일일 요약 보고서")
                 with st.expander("📄 보고서 보기 (클릭하여 펼치기)", expanded=True):
-                    st.markdown(report) # Use markdown for better formatting and font size
+                    st.markdown(report) 
 
     st.markdown("---")
 
@@ -153,18 +175,15 @@ def display_news_tab(company_name, news_items, key_prefix):
             display_title = f"🔥 {title}"
             
         with st.expander(display_title):
-            # Badge
             if is_major:
                 st.markdown('<span class="major-issue">Major Issue</span>', unsafe_allow_html=True)
 
-            # Image
             if news.get('image'):
                 st.image(news['image'], use_container_width=True)
                 
             st.write(f"**출처**: {news.get('link', '')}")
             st.write(f"**발행일**: {news.get('published', 'N/A')}")
             
-            # Content
             content = news.get('summary', '')
             if content:
                 st.markdown(content)
@@ -175,28 +194,41 @@ def display_news_tab(company_name, news_items, key_prefix):
             st.markdown(f"[🔗 원문 보러가기]({original})")
 
 # Main Layout
-tab1, tab2, tab3, tab4 = st.tabs(["IBK캐피탈 뉴스", "산은캐피탈 뉴스", "IBK 기업정보", "산은 기업정보"])
+tab1, tab2, tab3, tab4 = st.tabs(["IBK캐피탈", "산은캐피탈", "캐피탈 업황", "거시경제 (Macro)"])
 
 with tab1:
+    display_company_info("IBK Capital", "ibk_info")
+    st.markdown("---")
     if 'news_data' in st.session_state and 'IBK' in st.session_state['news_data']:
         display_news_tab("IBK Capital", st.session_state['news_data']['IBK'], "ibk")
     else:
         st.info("왼쪽 사이드바에서 '뉴스 가져오기' 버튼을 눌러주세요.")
 
 with tab2:
+    display_company_info("KDB Capital", "kdb_info")
+    st.markdown("---")
     if 'news_data' in st.session_state and 'KDB' in st.session_state['news_data']:
         display_news_tab("KDB Capital", st.session_state['news_data']['KDB'], "kdb")
     else:
         st.info("왼쪽 사이드바에서 '뉴스 가져오기' 버튼을 눌러주세요.")
-
+        
 with tab3:
-    display_company_info("IBK Capital", "ibk_info")
-
+    st.info("📊 **캐피탈 산업 전반의 주요 이슈 (PF, 채권, 규제 등)**")
+    if 'news_data' in st.session_state and 'Capital Industry' in st.session_state['news_data']:
+        display_news_tab("Capital Industry", st.session_state['news_data']['Capital Industry'], "industry")
+    else:
+        st.info("왼쪽 사이드바에서 '뉴스 가져오기' 버튼을 눌러주세요.")
+        
 with tab4:
-    display_company_info("KDB Capital", "kdb_info")
+    st.info("🌍 **환율, 금리, 유가 등 거시경제 동향**")
+    if 'news_data' in st.session_state and 'Macro Economy' in st.session_state['news_data']:
+        display_news_tab("Macro Economy", st.session_state['news_data']['Macro Economy'], "macro")
+    else:
+        st.info("왼쪽 사이드바에서 '뉴스 가져오기' 버튼을 눌러주세요.")
 
 st.sidebar.markdown("---")
 st.sidebar.header("NotebookLM 활용")
 st.sidebar.write("1. 생성된 보고서를 복사하세요.")
 st.sidebar.write("2. NotebookLM에 '소스'로 추가하세요.")
 st.sidebar.write("3. AI에게 질문하거나 오디오 개요를 들어보세요!")
+
