@@ -1,12 +1,15 @@
 import yfinance as yf
+import pandas as pd
 
 def get_market_data():
     """
-    Fetches real-time market data for KOSPI, USD/KRW, USD/JPY, Gold, Silver, Copper.
-    Returns a dictionary with formatted strings.
+    Fetches key market indicators: KOSPI, KOSDAQ, NASDAQ, Nikkei, USD/KRW, US 10Y Bond, Gold, Silver, Copper
     """
     tickers = {
         'KOSPI': '^KS11',
+        'KOSDAQ': '^KQ11',
+        'NASDAQ': '^IXIC',
+        'Nikkei 225': '^N225',
         'USD/KRW': 'KRW=X',
         'US 10Y Bond': '^TNX',
         'Gold': 'GC=F',
@@ -23,37 +26,60 @@ def get_market_data():
             history = ticker.history(period="5d")
             
             if len(history) < 1:
-                data[name] = {'price': 'N/A', 'change': '0.00%', 'color': 'black'}
+                data[name] = {'price': 'N/A', 'change': '0.00%', 'color': 'black', 'symbol': symbol}
                 continue
-                
+            
             current = history['Close'].iloc[-1]
             
-            # Get previous close for change calc
+            # Get previous close
             if len(history) >= 2:
                 prev = history['Close'].iloc[-2]
             else:
                 prev = history['Open'].iloc[-1] # Fallback
             
-            change = ((current - prev) / prev) * 100
+            change_rate = ((current - prev) / prev) * 100
             
-            # Format
-            if name == 'USD/KRW':
-                 fmt_price = f"{current:.2f}원"
-            elif name == 'US 10Y Bond':
-                 fmt_price = f"{current:.2f}%"
+            if change_rate > 0:
+                color = "red"
+                change_str = f"+{change_rate:.2f}%"
+            elif change_rate < 0:
+                color = "blue"
+                change_str = f"{change_rate:.2f}%"
             else:
-                 fmt_price = f"{current:,.2f}"
-
-            color = "red" if change > 0 else "blue" # Red is up in Korea
-            sign = "+" if change > 0 else ""
+                color = "black"
+                change_str = "0.00%"
             
+            # Formatting
+            if name == 'USD/KRW':
+                price_str = f"{current:.2f}원"
+            elif 'Bond' in name:
+                price_str = f"{current:.2f}%"
+            elif name in ['Gold', 'Silver', 'Copper']:
+                 price_str = f"${current:,.2f}"
+            else:
+                price_str = f"{current:,.2f}"
+                
             data[name] = {
-                'price': fmt_price,
-                'change': f"{sign}{change:.2f}%",
-                'color': color
+                'price': price_str,
+                'change': change_str,
+                'color': color,
+                'symbol': symbol # Return symbol for chart fetching
             }
+            
         except Exception as e:
-            # print(f"Error fetching {name}: {e}")
-            data[name] = {'price': 'N/A', 'change': '0.00%', 'color': 'black'}
+            data[name] = {'price': 'N/A', 'change': '0.00%', 'color': 'black', 'symbol': symbol}
             
     return data
+
+def get_historical_data(symbol, period="5y"):
+    """
+    Fetches historical closing prices for a given symbol.
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+        history = ticker.history(period=period)
+        if not history.empty:
+            return history['Close']
+    except Exception as e:
+        print(f"Error fetching history for {symbol}: {e}")
+    return pd.Series()

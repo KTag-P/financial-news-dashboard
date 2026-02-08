@@ -32,6 +32,31 @@ except Exception as e:
     traceback.print_exc()
     print(f"FAILED: News Fetcher error: {e}")
 
+print("\n--- Testing 1-Year Key Issues ---")
+try:
+    issues = news_fetcher.fetch_1year_key_issues("IBK Capital", max_items=2)
+    print(f"Fetched {len(issues)} key issues.")
+    if len(issues) > 0:
+        print("Sample Issue:", issues[0]['title'])
+    print("SUCCESS: Key Issues Fetcher executed.")
+except Exception as e:
+    print(f"FAILED: Key Issues Fetcher error: {e}")
+
+print("\n--- Testing Market Data (New Indices) ---")
+try:
+    import market_data_fetcher
+    data = market_data_fetcher.get_market_data()
+    keys = ['KOSDAQ', 'NASDAQ', 'Nikkei 225']
+    for k in keys:
+        if k in data:
+            print(f"Fetched {k}: {data[k]['price']}")
+        else:
+            print(f"FAILED to fetch {k}")
+    print("SUCCESS: Market Data fetcher check complete.")
+except Exception as e:
+    print(f"FAILED: Market Data error: {e}")
+
+
 print("\n--- Testing Imports ---")
 try:
     from urllib.parse import quote

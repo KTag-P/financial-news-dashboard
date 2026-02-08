@@ -1,178 +1,224 @@
 import feedparser
-from datetime import datetime, timedelta
+import requests
 from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+from urllib.parse import quote
+from dateutil import parser
 import time
 from time import mktime
-from urllib.parse import quote
-import requests
-import re
+import googlenewsdecoder
+from newspaper import Article
 
-try:
-    from googlenewsdecoder import new_decoderv1
-except ImportError:
-    new_decoderv1 = None
-
-try:
-    from newspaper import Article
-except ImportError:
-    Article = None
-
-def decode_url(url):
+def fetch_1year_key_issues(company_name, max_items=5):
     """
-    Decodes Google News RSS URL to the original publisher URL.
+    Fetches key issues (CEO, M&A) from the last 365 days.
     """
-    if new_decoderv1:
-        try:
-            decoded = new_decoderv1(url)
-            if decoded.get('status'):
-                return decoded['decoded_url']
-        except Exception as e:
-            print(f"Error decoding URL {url}: {e}")
-    return url
-
-def search_naver_news_content(title):
-    try:
-        # Search Naver News for the title
-        search_url = f"https://search.naver.com/search.naver?where=news&query={title}"
-        headers = { 'User-Agent': 'Mozilla/5.0' }
-        resp = requests.get(search_url, headers=headers)
-        soup = BeautifulSoup(resp.content, 'html.parser')
-        
-        # Find first news link that is 'news.naver.com' (smart fallback)
-        # Look for 'info_group' > 'a' tags
-        
-        links = soup.select('a.info')
-        target_url = None
-        for link in links:
-            href = link.get('href')
-            if href and 'news.naver.com' in href:
-                target_url = href
-                break
-        
-        if target_url:
-            # Scrape Naver News directly (easy to scrape)
-            # Naver scraping doesn't extract image yet, so return None for image
-            return scrape_naver_news(target_url), None, target_url
+    keywords = ['CEO', '대표이사', '인수', '합병', 'M&A', '신용등급', '배당', '최대실적']
+    query = ' OR '.join(keywords)
+    encoded_query = quote(f'{company_name} ({query}) when:1y')
+    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+    
+    feed = feedparser.parse(rss_url)
+    issues = []
+    
+    for entry in feed.entries:
+        if len(issues) >= max_items:
+            break
             
-    except Exception as e:
-        print(f"Naver Search failed: {e}")
-    return None, None, None
-
-def scrape_naver_news(url):
-    try:
-        headers = { 'User-Agent': 'Mozilla/5.0' }
-        resp = requests.get(url, headers=headers)
-        soup = BeautifulSoup(resp.content, 'html.parser')
+        title = entry.title
+        published = entry.published
         
-        # Naver news content id is usually 'dic_area'
-        content_div = soup.find('div', {'id': 'dic_area'})
-        if content_div:
-            return content_div.get_text(separator='\n\n', strip=True)
-        else:
-            # Fallback for entertainment/sports?
-            content_div = soup.find('div', {'id': 'newsEndContents'})
-            if content_div:
-                return content_div.get_text(separator='\n\n', strip=True)
-                
-    except Exception as e:
-        print(f"Naver Scrape failed: {e}")
-    return None
+        # Simple relevance check
+        if any(k in title for k in keywords):
+             issues.append({
+                'title': title,
+                'link': entry.link,
+                'published': published,
+                'summary': "핵심 키워드 포함 기사"
+             })
+             
+    return issues
 
-def scrape_content(url, title=''):
+def fetch_recruitment_news(company_name):
     """
-    Scrapes the full content of the article using newspaper3k.
-    If fails or content is short, searches Naver News.
-    Returns (text, error_message, final_url).
+    Fetches specific recruitment related news/notices.
     """
-    if not Article:
-        return None, None, "newspaper3k not installed", url
-        
-    text = None
-    image = None # Initialize image
-    error = None
+    keywords = ['채용', '공채', '신입', '인턴', '모집', '선발']
+    query = ' OR '.join(keywords)
+    encoded_query = quote(f'{company_name} ({query}) when:30d') # Look back 30 days for recruitment
+    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
     
-    # 1. Try Original URL
-    try:
-        # Attempt to download and parse article
-        article = Article(url, language='ko') # Added language='ko'
-        article.download()
-        article.parse()
-        
-        # Check if content is substantial
-        if len(article.text) > 50: # Changed threshold from 200 to 50
-            text = article.text
-            image = article.top_image
-        else:
-            # Fallback message if content is too short
-            text = "내용을 불러올 수 없습니다. 원문 링크를 확인해주세요."
-            image = None
-            # Do not raise an exception here, allow Naver fallback if title is present
-            # or return this message if no Naver fallback.
-            
-        return text, image, None, url
-        
-    except Exception as e:
-        error = str(e)
-        # print(f"Error scraping {url}: {e}") # Uncomment for debugging
-        text = "스크래핑 중 오류가 발생했습니다." # Set text to error message
-        image = None # Ensure image is None on error
-        
-        # 2. Naver Fallback
-        if title:
-            print(f"Falling back to Naver for: {title}")
-            naver_text, naver_image, naver_url = search_naver_news_content(title)
-            if naver_text:
-                return naver_text, naver_image, None, naver_url
+    feed = feedparser.parse(rss_url)
+    items = []
     
-    return text, None, error, url
+    for entry in feed.entries:
+        if len(items) >= 3: # Limit to top 3
+            break
+        
+        items.append({
+            'title': f"[채용] {entry.title}",
+            'link': entry.link,
+            'published': entry.published,
+            'summary': "채용 관련 최신 뉴스/공고입니다."
+        })
+    return items
 
-def fetch_news(query, days=1, max_items=10):
+def fetch_news_period(company_name, start_date, end_date, max_items=10):
     """
-    Fetches news for a given query from Google News RSS.
-    Includes full content scraping.
+    Fetches news for a specific date range.
     """
-    today = datetime.now()
-    # Strict 24h lookback if days=1, otherwise days-based
-    if days <= 1:
-        cutoff_date = today - timedelta(hours=24)
+    # Query Logic (Same as fetch_news)
+    if company_name == "Capital Industry":
+        query = "캐피탈 (업황 OR 전망 OR 연체율 OR PF OR 부동산 OR 금리)"
+    elif company_name == "Macro Economy":
+        query = "(기준금리 OR 국고채 OR 환율 OR 소비자물가 OR 경기침체) -주식 -종목"
+    elif company_name == "IBK Capital":
+        query = "IBK캐피탈"
+    elif company_name == "IBK Parent":
+        query = "IBK기업은행"
+    elif company_name == "KDB Capital":
+        query = "산은캐피탈"
+    elif company_name == "KDB Parent":
+        query = "KDB산업은행"
     else:
-        cutoff_date = today - timedelta(days=days)
-        cutoff_date = cutoff_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        query = company_name
 
-    # Expanded Keywords for Industry & Macro
-    keywords = {
-        'IBK Capital': ['IBK캐피탈', 'IBK기업은행 캐피탈'],
-        'KDB Capital': ['산은캐피탈', 'KDB산업은행 캐피탈'],
-        'Capital Industry': ['캐피탈사 업황', '여신전문금융', '캐피탈 채권', 'PF 대출 부실'],
-        'Macro Economy': ['한국 기준금리', '원달러 환율 전망', '국고채 금리', '회사채 금리']
-    }
+    # Check for KDB CEO keywords if KDB
+    if company_name == "KDB Capital" and start_date.year == 2024:
+         query += " OR 산은캐피탈 (이병호 OR 대표)"
+
+    # Format: after:YYYY-MM-DD before:YYYY-MM-DD
+    # Note: Google News 'after/before' often works better than 'when' for archives
+    google_period = f"after:{start_date.strftime('%Y-%m-%d')} before:{end_date.strftime('%Y-%m-%d')}"
     
-    # The original 'query' parameter is now treated as 'company_name' for keyword lookup
-    # If 'query' is not in keywords, it will be used directly in the search.
-    search_terms = keywords.get(query, [query])
-    
-    # Construct Query
-    # For Google News RSS, 'when:1d' works well for recent.
-    # We combine it with python-side filtering for precision.
-    term_query = ' OR '.join([f'"{t}"' for t in search_terms])
-    if days <= 1:
-         encoded_query = quote(f"({term_query}) when:1d")
-    else:
-         encoded_query = quote(f"({term_query}) when:{days}d")
-    
-    # Using Google News RSS for broader coverage
+    final_query = f'{query} {google_period}'
+    encoded_query = quote(final_query)
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
     
     feed = feedparser.parse(rss_url)
     
     news_items = []
-    seen_titles = set() # Added to prevent duplicate articles
-
-    # Process only the top N items to avoid timeouts
-    entries = feed.entries[:max_items]
+    # ... (Rest is similar, reuse logic ideally, but for now copying core loop for safety)
     
-    for entry in entries:
-        # Strict Date Filter
+    headers_list = [
+        {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'},
+        {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15'}
+    ]
+
+    for entry in feed.entries:
+        if len(news_items) >= max_items:
+            break
+            
+        title = entry.title
+        link = entry.link
+        published = entry.published
+        
+        # ... (Decode & Scrape logic reuse)
+        try:
+             decoded_link = googlenewsdecoder.new_decoderv1(link, interval=0.0)['decoded_url']
+        except:
+             decoded_link = link
+             
+        # Scrape
+        content = ""
+        summary = ""
+        try:
+            article = Article(decoded_link, language='ko')
+            article.download()
+            article.parse()
+            try:
+                article.nlp()
+                summary = article.summary
+            except:
+                summary = ""
+            
+            content = article.text
+            if not summary:
+                 summary = content[:500] + "..." if len(content) > 500 else content
+                 
+        except:
+            summary = "요약 실패"
+            
+        news_items.append({
+            'title': title,
+            'link': decoded_link,
+            'published': published,
+            'summary': summary,
+            'full_content': content,  # Save full text
+            'original_link': decoded_link
+        })
+        time.sleep(0.1)
+        
+    return news_items
+
+def fetch_news(company_name, days=1, max_items=10, is_retry=False):
+    # Search Query Logic (Separated)
+    if company_name == "Capital Industry":
+        query = "캐피탈 (업황 OR 전망 OR 연체율 OR PF OR 부동산 OR 금리 OR 여전채)"
+    elif company_name == "Macro Economy":
+        query = "(기준금리 OR 국고채 OR 환율 OR 소비자물가 OR 경기침체 OR 유가) -주식 -종목"
+    elif company_name == "IBK Capital":
+        query = "IBK캐피탈"
+    elif company_name == "IBK Parent":
+        query = "IBK기업은행"
+    elif company_name == "KDB Capital":
+        query = "산은캐피탈"
+    elif company_name == "KDB Parent":
+        query = "KDB산업은행"
+    else:
+        query = company_name
+
+    today = datetime.now()
+    
+    # Date Logic
+    if is_retry:
+        google_period = "when:1y" # Fallback to 1 year
+        cutoff_date = today - timedelta(days=365)
+    else:
+        if days <= 1:
+            google_period = "when:1d"
+            cutoff_date = today - timedelta(hours=24)
+        elif days <= 7:
+            google_period = "when:7d"
+            cutoff_date = today - timedelta(days=days)
+        elif days <= 30:
+            google_period = "when:30d"
+            cutoff_date = today - timedelta(days=days)
+        else:
+            google_period = "when:1y"
+            cutoff_date = today - timedelta(days=days)
+
+    cutoff_date = cutoff_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Final Query
+    final_query = f'{query} {google_period}'
+    encoded_query = quote(final_query)
+    rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
+    
+    feed = feedparser.parse(rss_url)
+    
+    news_items = []
+    seen_titles = set()
+
+    headers_list = [
+        {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'},
+        {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15'},
+        {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0'}
+    ]
+
+    for entry in feed.entries:
+        if len(news_items) >= max_items:
+            break
+            
+        title = entry.title
+        link = entry.link
+        published = entry.published
+        
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+
+        # Strict Date Filter (Python Side)
         if hasattr(entry, 'published_parsed') and entry.published_parsed:
             try:
                 pub_struct = entry.published_parsed
@@ -181,46 +227,87 @@ def fetch_news(query, days=1, max_items=10):
                 if pub_dt < cutoff_date:
                     continue
             except Exception:
-                pass # If parsing fails, maybe include? or safe skip. Safe skip.
-        else:
-            # If no date, and we want strict 24h, safer to skip unless it's very relevant?
-            # Google News usually has dates.
-            pass
+                pass 
+        
+        # Resolve Google News Redirect
+        try:
+            decoded_link = googlenewsdecoder.new_decoderv1(link, interval=0.1)['decoded_url']
+        except:
+            decoded_link = link
+            
+        # Scrape Content with Fallback
+        content = ""
+        image_url = None
+        
+        if not is_retry: # Optimize: Don't deep scrape on retry/fallback to save time, or keep it if needed.
+                         # User wants content, so we scrape.
+            try:
+                headers = headers_list[len(news_items) % len(headers_list)]
+                
+                # 1. Try Newspaper3k with NLP Summary
+                article = Article(decoded_link, language='ko') # Set language to Korean
+                article.download()
+                article.parse()
+                
+                # Attempt NLP Summarization
+                try:
+                    article.nlp()
+                    summary = article.summary
+                except:
+                    summary = ""
 
-        title = entry.title
-        link = entry.link
-        published = entry.published
-        
-        # 1. Decode URL
-        real_url = decode_url(link)
-        
-        # 2. Scrape Content
-        full_text, image_url, error, final_link = scrape_content(real_url, title)
-        
-        # 3. Fallback to RSS summary if scraping failed or text is empty
-        summary_text = ''
-        if full_text and len(full_text) > 50:
-             summary_text = full_text
+                content = article.text
+                image_url = article.top_image
+                
+                # Fallback if NLP summary fails or is empty
+                if not summary or len(summary) < 50:
+                     if len(content) > 500:
+                         summary = content[:400] + "..." # Fallback to slice
+                     else:
+                         summary = content
+                
+                # 2. Fallback if newspaper3k failed completely
+                if len(content) < 100:
+                    response = requests.get(decoded_link, headers=headers, timeout=5)
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    meta_desc = soup.find('meta', attrs={'name': 'description'}) or soup.find('meta', attrs={'property': 'og:description'})
+                    if meta_desc:
+                        content = meta_desc.get('content', '')
+                        summary = content
+                        
+                if not content:
+                     content = "내용을 가져올 수 없습니다."
+                     summary = "요약 불가 (원문 참조)"
+
+            except Exception as e:
+                content = f"스크래핑 실패: {str(e)}"
+                summary = "스크래핑 오류"
         else:
-             # Fallback to cleaning the RSS summary
-             if 'summary' in entry:
-                soup = BeautifulSoup(entry.summary, 'html.parser')
-                summary_text = soup.get_text(separator=' ', strip=True)
-             if error:
-                 print(f"Scraping failed for {real_url}: {error}")
+            content = "과거 기사입니다."
+            summary = "과거 기사 (원문 참조)"
+
+            
+        # Tag as recent-past if retry
+        if is_retry:
+            title = f"[최근] {title}"
 
         news_items.append({
             'title': title,
-            'link': final_link, # Use the final resolved URL (Naver or Original)
+            'link': decoded_link,
             'published': published,
-            'summary': summary_text,
+            'summary': summary,
+            'full_content': content, # Save full text
             'image': image_url,
-            'original_link': link
+            'original_link': decoded_link
         })
         
-        # Be polite to servers? 
-        # Since we are scraping different domains, we don't strictly need a sleep 
-        # but decoding might hit google.
-        time.sleep(0.5) 
+        if not is_retry:
+            time.sleep(0.5) 
         
+    # Auto-Fallback Logic
+    if not news_items and not is_retry and company_name not in ["Capital Industry", "Macro Economy"]:
+        # If no news in period, try fetching recent 1 year (limit 3)
+        # print(f"DEBUG: No news for {company_name} in {days}d. Retrying with 1y fallback.")
+        return fetch_news(company_name, days=365, max_items=3, is_retry=True)
+
     return news_items
