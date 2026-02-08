@@ -49,11 +49,12 @@ def search_naver_news_content(title):
         
         if target_url:
             # Scrape Naver News directly (easy to scrape)
-            return scrape_naver_news(target_url), target_url
+            # Naver scraping doesn't extract image yet, so return None for image
+            return scrape_naver_news(target_url), None, target_url
             
     except Exception as e:
         print(f"Naver Search failed: {e}")
-    return None, None
+    return None, None, None
 
 def scrape_naver_news(url):
     try:
@@ -82,7 +83,7 @@ def scrape_content(url, title=''):
     Returns (text, error_message, final_url).
     """
     if not Article:
-        return None, "newspaper3k not installed", url
+        return None, None, "newspaper3k not installed", url
         
     text = None
     error = None
@@ -93,23 +94,24 @@ def scrape_content(url, title=''):
         article.download()
         article.parse()
         text = article.text
+        image = article.top_image  # Extract image
         
         # Check if content is blocked/short (e.g. Hankyung often blocks or redirects)
         if not text or len(text) < 200:
              raise Exception("Content too short or empty")
              
-        return text, None, url
+        return text, image, None, url
         
     except Exception as e:
         error = str(e)
         # 2. Naver Fallback
         if title:
             print(f"Falling back to Naver for: {title}")
-            naver_text, naver_url = search_naver_news_content(title)
+            naver_text, naver_image, naver_url = search_naver_news_content(title)
             if naver_text:
-                return naver_text, None, naver_url
+                return naver_text, naver_image, None, naver_url
     
-    return text, error, url
+    return text, None, error, url
 
 def fetch_news(query, days=1, max_items=10):
     """
@@ -136,7 +138,7 @@ def fetch_news(query, days=1, max_items=10):
         real_url = decode_url(link)
         
         # 2. Scrape Content
-        full_text, error, final_link = scrape_content(real_url, title)
+        full_text, image_url, error, final_link = scrape_content(real_url, title)
         
         # 3. Fallback to RSS summary if scraping failed or text is empty
         summary_text = ''
@@ -155,6 +157,7 @@ def fetch_news(query, days=1, max_items=10):
             'link': final_link, # Use the final resolved URL (Naver or Original)
             'published': published,
             'summary': summary_text,
+            'image': image_url,
             'original_link': link
         })
         
