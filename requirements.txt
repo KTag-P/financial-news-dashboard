@@ -1,0 +1,9 @@
+streamlit
+feedparser
+beautifulsoup4
+requests
+python-dateutil
+newspaper3k
+lxml[html_clean]
+googlenewsdecoder
+pyngrok
