@@ -15,7 +15,7 @@ def seed_5_years():
         if key not in existing_data:
             existing_data[key] = []
             
-    years = [2021, 2022, 2023, 2024, 2025]
+    years = [2020, 2021, 2022, 2023, 2024, 2025]
     companies = [
         ("IBK", "IBK Capital", 50),
         ("KDB", "KDB Capital", 50),

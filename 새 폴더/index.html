@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>캐피탈사 채용 대비 Dashboard</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏦</text></svg>">
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header class="header" id="main-header">
+    <div class="header-top">
+        <div class="header-brand">
+            <div class="logo-icon">🏦</div>
+            <div>
+                <h1>캐피탈사 채용 대비 Dashboard</h1>
+                <div class="subtitle">IBK캐피탈 · 산은캐피탈 종합 분석</div>
+            </div>
+        </div>
+        <div class="header-controls">
+            <div class="header-meta">
+                <span class="badge" id="data-date"><i class="fas fa-database"></i> 데이터 로딩 중...</span>
+                <span class="badge"><i class="fas fa-clock"></i> 2026.02.12 기준</span>
+            </div>
+            <button class="theme-toggle" id="theme-toggle" title="다크모드 전환">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="overview"><i class="fas fa-building"></i> 기업 개요</button>
+        <button class="tab-btn" data-tab="charts"><i class="fas fa-chart-bar"></i> 재무 비교</button>
+        <button class="tab-btn" data-tab="ibk"><i class="fas fa-newspaper"></i> IBK캐피탈</button>
+        <button class="tab-btn" data-tab="kdb"><i class="fas fa-newspaper"></i> 산은캐피탈</button>
+        <button class="tab-btn" data-tab="industry"><i class="fas fa-industry"></i> 캐피탈 업황</button>
+        <button class="tab-btn" data-tab="macro"><i class="fas fa-globe"></i> 거시경제</button>
+    </nav>
+</header>
+
+<!-- ============ MAIN CONTENT ============ -->
+<main class="main-content">
+
+    <!-- Loading Indicator -->
+    <div class="loading-spinner" id="news-loading" style="display:none;">
+        <div class="spinner"></div>
+        <span>뉴스 데이터를 불러오는 중...</span>
+    </div>
+
+    <!-- ====== TAB: 기업 개요 ====== -->
+    <div class="tab-panel active" id="panel-overview">
+        
+        <!-- Quick Stats -->
+        <div class="stats-grid stagger-children" id="stats-grid">
+            <div class="stat-card ibk fade-in-up">
+                <div class="stat-icon"><i class="fas fa-building"></i></div>
+                <div class="stat-label">IBK캐피탈 총자산</div>
+                <div class="stat-value">12.8조원</div>
+                <span class="stat-change up"><i class="fas fa-arrow-up"></i> +11.3% YoY</span>
+            </div>
+            <div class="stat-card kdb fade-in-up">
+                <div class="stat-icon"><i class="fas fa-landmark"></i></div>
+                <div class="stat-label">산은캐피탈 총자산</div>
+                <div class="stat-value">10.2조원</div>
+                <span class="stat-change down"><i class="fas fa-arrow-down"></i> -24.4% YoY</span>
+            </div>
+            <div class="stat-card accent fade-in-up">
+                <div class="stat-icon"><i class="fas fa-trophy"></i></div>
+                <div class="stat-label">IBK 순이익 (역대최대)</div>
+                <div class="stat-value">2,142억</div>
+                <span class="stat-change up"><i class="fas fa-arrow-up"></i> +19% YoY</span>
+            </div>
+            <div class="stat-card info fade-in-up">
+                <div class="stat-icon"><i class="fas fa-shield-halved"></i></div>
+                <div class="stat-label">KDB 연체율 (업계 최저)</div>
+                <div class="stat-value">0.10%</div>
+                <span class="stat-change up"><i class="fas fa-arrow-down"></i> -0.05%p</span>
+            </div>
+        </div>
+
+        <!-- Market Indicators -->
+        <div class="section-title fade-in-up"><span class="icon">🌏</span> 실시간 시장 지표</div>
+        <div class="market-grid stagger-children" id="market-grid"></div>
+        
+        <!-- Company Overview Grid -->
+        <div class="section-title fade-in-up" style="margin-top:36px;"><span class="icon">🏢</span> IBK캐피탈 vs 산은캐피탈 비교 분석</div>
+        <div class="company-grid">
+            <!-- IBK Capital Panel -->
+            <div class="company-panel fade-in-up">
+                <div class="company-panel-header ibk">
+                    <h3><i class="fas fa-landmark"></i> IBK캐피탈</h3>
+                    <span class="badge-tag">IBK금융그룹</span>
+                </div>
+                <div class="company-panel-body" id="ibk-panel">
+                    <div class="loading-spinner"><div class="spinner"></div> 로딩 중...</div>
+                </div>
+            </div>
+
+            <!-- KDB Capital Panel -->
+            <div class="company-panel fade-in-up">
+                <div class="company-panel-header kdb">
+                    <h3><i class="fas fa-landmark"></i> 산은캐피탈</h3>
+                    <span class="badge-tag">KDB산업은행</span>
+                </div>
+                <div class="company-panel-body" id="kdb-panel">
+                    <div class="loading-spinner"><div class="spinner"></div> 로딩 중...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== TAB: 재무 비교 ====== -->
+    <div class="tab-panel" id="panel-charts">
+        <div class="section-title"><span class="icon">📊</span> 재무 지표 비교 차트</div>
+        <p style="font-size:14px;color:var(--text-secondary);margin-bottom:24px;">IBK캐피탈과 산은캐피탈의 주요 재무 지표를 시각적으로 비교합니다.</p>
+        
+        <div class="charts-grid">
+            <div class="chart-container chart-full">
+                <canvas id="chart-net-income" style="height:350px;"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart-roe" style="height:300px;"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="chart-assets" style="height:300px;"></canvas>
+            </div>
+        </div>
+
+        <!-- Quick Comparison Table -->
+        <div class="card" style="margin-top:24px;">
+            <div class="card-header"><i class="fas fa-table"></i> 2024년 실적 핵심 비교</div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table class="fin-table">
+                    <thead>
+                        <tr>
+                            <th>구분</th>
+                            <th>IBK캐피탈</th>
+                            <th>산은캐피탈</th>
+                            <th>비교</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="year-cell">총자산</td>
+                            <td>12조 8,000억원</td>
+                            <td>10조 2,000억원</td>
+                            <td><span style="color:var(--info);font-weight:700;">IBK +2.6조</span></td>
+                        </tr>
+                        <tr>
+                            <td class="year-cell">당기순이익</td>
+                            <td>2,142억원 <span style="color:var(--danger);font-size:11px;font-weight:700;">(역대최대)</span></td>
+                            <td>1,450억원</td>
+                            <td><span style="color:var(--info);font-weight:700;">IBK +692억</span></td>
+                        </tr>
+                        <tr>
+                            <td class="year-cell">ROE</td>
+                            <td>9.8%</td>
+                            <td>7.8%</td>
+                            <td><span style="color:var(--info);font-weight:700;">IBK +2.0%p</span></td>
+                        </tr>
+                        <tr>
+                            <td class="year-cell">연체율</td>
+                            <td>0.46%</td>
+                            <td>0.10%</td>
+                            <td><span style="color:var(--success);font-weight:700;">KDB 우위</span></td>
+                        </tr>
+                        <tr>
+                            <td class="year-cell">NPL비율</td>
+                            <td>0.57%</td>
+                            <td>0.8%</td>
+                            <td><span style="color:var(--info);font-weight:700;">IBK 우위</span></td>
+                        </tr>
+                        <tr>
+                            <td class="year-cell">핵심 전략</td>
+                            <td>생산적 금융 + 디지털 전환</td>
+                            <td>투자금융 확대 + 시장 안전판</td>
+                            <td><span style="color:var(--text-muted);font-size:12px;">방향성 차별</span></td>
+                        </tr>
+                        <tr>
+                            <td class="year-cell">모행 강점</td>
+                            <td>중소기업 네트워크 #1</td>
+                            <td>정책금융 + AA등급 보증</td>
+                            <td><span style="color:var(--text-muted);font-size:12px;">구조적 차별</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== TAB: IBK캐피탈 뉴스 ====== -->
+    <div class="tab-panel" id="panel-ibk">
+        <div class="section-title"><span class="icon">📰</span> IBK캐피탈 뉴스 아카이브</div>
+        <div id="ibk-news">
+            <div class="loading-spinner"><div class="spinner"></div> 뉴스 데이터를 불러오는 중...</div>
+        </div>
+    </div>
+
+    <!-- ====== TAB: 산은캐피탈 뉴스 ====== -->
+    <div class="tab-panel" id="panel-kdb">
+        <div class="section-title"><span class="icon">📰</span> 산은캐피탈 뉴스 아카이브</div>
+        <div id="kdb-news">
+            <div class="loading-spinner"><div class="spinner"></div> 뉴스 데이터를 불러오는 중...</div>
+        </div>
+    </div>
+
+    <!-- ====== TAB: 캐피탈 업황 ====== -->
+    <div class="tab-panel" id="panel-industry">
+        <div class="section-title"><span class="icon">🏭</span> 캐피탈 업황 아카이브</div>
+        <div id="industry-news">
+            <div class="loading-spinner"><div class="spinner"></div> 뉴스 데이터를 불러오는 중...</div>
+        </div>
+    </div>
+
+    <!-- ====== TAB: 거시경제 ====== -->
+    <div class="tab-panel" id="panel-macro">
+        <div class="section-title"><span class="icon">🌍</span> 거시경제 아카이브</div>
+        <div id="macro-news">
+            <div class="loading-spinner"><div class="spinner"></div> 뉴스 데이터를 불러오는 중...</div>
+        </div>
+    </div>
+
+</main>
+
+<!-- Scroll to Top Button -->
+<button class="scroll-top" id="scroll-top" title="맨 위로">
+    <i class="fas fa-arrow-up"></i>
+</button>
+
+<!-- Scripts -->
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>

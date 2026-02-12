@@ -7,3 +7,8 @@ newspaper3k
 lxml[html_clean]
 googlenewsdecoder
 pyngrok
+yfinance
+trafilatura
+altair
+google-genai
+python-dotenv
